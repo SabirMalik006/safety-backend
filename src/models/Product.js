@@ -1,89 +1,63 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const productSchema = new mongoose.Schema({
   name: {
     type: String,
     required: [true, 'Product name is required'],
-    trim: true
+    trim: true,
+    maxlength: [100, 'Name too long']
   },
   slug: {
     type: String,
-    required: true,
     unique: true,
     lowercase: true,
-    trim: true
+    // ✅ REMOVE required: true - let it be auto-generated
   },
   description: {
     type: String,
-    required: true
-  },
-  shortDescription: {
-    type: String,
-    default: ''
+    required: [true, 'Description is required']
   },
   price: {
     type: Number,
-    required: true,
+    required: [true, 'Price is required'],
     min: 0
   },
-  originalPrice: {
+  comparePrice: {
     type: Number,
-    min: 0,
     default: 0
-  },
-  discount: {
-    type: Number,
-    default: 0,
-    min: 0,
-    max: 100
-  },
-  stock: {
-    type: Number,
-    required: true,
-    min: 0,
-    default: 0
-  },
-  inStock: {
-    type: Boolean,
-    default: true
   },
   category: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',
     required: true
   },
-  categorySlug: {
-    type: String,
-    required: true
-  },
   images: [{
-    type: String,
-    required: true
+    url: String,
+    publicId: String,
+    alt: String
   }],
   colors: [{
-    type: String,
-    default: []
+    name: String,
+    code: String,
+    inStock: Boolean
   }],
   sizes: [{
-    type: String,
-    default: []
+    name: String,
+    inStock: Boolean
   }],
-  features: [{
-    type: String,
-    default: []
-  }],
-  specifications: {
-    type: Map,
-    of: String,
-    default: {}
+  stock: {
+    type: Number,
+    required: true,
+    min: 0,
+    default: 0
   },
   rating: {
     type: Number,
-    default: 0,
     min: 0,
-    max: 5
+    max: 5,
+    default: 0
   },
-  reviewsCount: {
+  numReviews: {
     type: Number,
     default: 0
   },
@@ -95,34 +69,18 @@ const productSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   }
-}, {
-  timestamps: true
-});
+}, { timestamps: true });
 
-// Create slug from name before saving
+// ✅ Auto-generate slug before saving
 productSchema.pre('save', function(next) {
-  if (this.isModified('name')) {
+  if (this.isModified('name') || !this.slug) {
     this.slug = this.name
       .toLowerCase()
-      .replace(/[^a-zA-Z0-9]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
+      .replace(/[^\w\s]/g, '')
+      .replace(/\s+/g, '-')
+      + '-' + Math.random().toString(36).substring(2, 6);
   }
-  
-  // Calculate discount percentage
-  if (this.originalPrice > this.price) {
-    this.discount = Math.round(((this.originalPrice - this.price) / this.originalPrice) * 100);
-  } else {
-    this.discount = 0;
-  }
-  
-  // Set inStock based on stock quantity
-  this.inStock = this.stock > 0;
-  
   next();
 });
 
-// Index for search
-productSchema.index({ name: 'text', description: 'text' });
-
-module.exports = mongoose.model('Product', productSchema);
+export default mongoose.model('Product', productSchema);

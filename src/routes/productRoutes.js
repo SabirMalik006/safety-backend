@@ -1,24 +1,16 @@
-const express = require('express');
+import express from 'express';
+import { getProducts, getProduct, createProduct, updateProduct, deleteProduct, uploadProductImages, deleteProductImage } from '../controllers/productController.js';
+import { protect, admin } from '../middleware/authMiddleware.js';
+import { upload } from '../config/cloudinary.js';
+
 const router = express.Router();
-const { protect } = require('../middleware/auth');
-const { admin } = require('../middleware/admin');
-const {
-  createProduct,
-  getProducts,
-  getProductBySlug,
-  updateProduct,
-  deleteProduct,
-  getFeaturedProducts
-} = require('../controllers/productController');
 
-// Public routes
 router.get('/', getProducts);
-router.get('/featured', getFeaturedProducts);
-router.get('/:slug', getProductBySlug);
-
-// Admin only routes
+router.get('/:id', getProduct);
 router.post('/', protect, admin, createProduct);
+router.post('/upload-images', protect, admin, upload.array('images', 5), uploadProductImages);
 router.put('/:id', protect, admin, updateProduct);
 router.delete('/:id', protect, admin, deleteProduct);
+router.delete('/delete-image', protect, admin, deleteProductImage);
 
-module.exports = router;
+export default router;

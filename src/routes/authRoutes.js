@@ -1,23 +1,23 @@
-const express = require('express');
+import express from 'express';
+import { register, login, getMe , forgotPassword, verifyOTP, resetPassword} from '../controllers/authController.js';
+import { protect } from '../middleware/authMiddleware.js';
+
 const router = express.Router();
-const { protect } = require('../middleware/auth');
-const {
-  registerUser,
-  loginUser,
-  getProfile,
-  updateProfile,
-  forgotPassword,
-  resetPassword
-} = require('../controllers/authController');
 
-// Public routes
-router.post('/register', registerUser);
-router.post('/login', loginUser);
+router.post('/register', register);
+router.post('/login', login);
 router.post('/forgot-password', forgotPassword);
-router.post('/reset-password', resetPassword);
+router.post('/verify-otp', verifyOTP);
+router.put('/reset-password', resetPassword);
+router.get('/me', protect, getMe);
+router.post('/test-sendgrid', async (req, res) => {
+  const { sendEmail } = await import('../utils/emailService.js');
+  const result = await sendEmail({
+    to: req.body.email || 'your-email@gmail.com',
+    subject: 'SendGrid Test',
+    html: '<h1>✅ SendGrid is Working!</h1><p>Your email configuration is correct.</p>'
+  });
+  res.json(result);
+});
 
-// Private routes (require authentication)
-router.get('/profile', protect, getProfile);
-router.put('/profile', protect, updateProfile);
-
-module.exports = router;
+export default router;

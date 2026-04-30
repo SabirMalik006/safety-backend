@@ -1,84 +1,246 @@
-const nodemailer = require('nodemailer');
+import sgMail from '@sendgrid/mail';
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+// Initialize SendGrid with API key
+if (process.env.SENDGRID_API_KEY) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+  console.log('SendGrid initialized');
+}
+
+// ============================================
+// Main Send Email Function (Simple)
+// ============================================
+export const sendEmail = async ({ to, subject, html, text }) => {
+  // Agar SendGrid API key nahi hai to error return karo
+  if (!process.env.SENDGRID_API_KEY) {
+    console.error('SendGrid API key not configured');
+    return { success: false, error: 'Email service not configured' };
   }
-});
 
-const sendEmail = async (to, subject, html) => {
   try {
-    const info = await transporter.sendMail({
-      from: `"Horizon Supplies" <${process.env.EMAIL_USER}>`,
-      to: to,
-      subject: subject,
-      html: html
-    });
-    console.log('Email sent:', info.messageId);
-    return true;
+    const msg = {
+      to,
+      from: process.env.SENDGRID_FROM_EMAIL || process.env.EMAIL_USER || 'noreply@horizon.pk',
+      subject,
+      html,
+      text: text || html?.replace(/<[^>]*>/g, ''),
+    };
+    
+    const response = await sgMail.send(msg);
+    console.log('Email sent via SendGrid:', response[0]?.statusCode);
+    return { success: true, messageId: response[0]?.headers?.['x-message-id'] };
+    
   } catch (error) {
-    console.error('Email Error:', error);
-    return false;
+    console.error('SendGrid email error:', error.response?.body || error.message);
+    return { success: false, error: error.message };
   }
 };
 
-const sendWelcomeEmail = async (user) => {
+// ============================================
+// 1. Send Welcome Email
+// ============================================
+export const sendWelcomeEmail = async (user) => {
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h1 style="color: #1e3c72;">Welcome to Horizon Supplies! 🎉</h1>
-      <p>Hello <strong>${user.name}</strong>,</p>
-      <p>Thank you for creating an account with Horizon Supplies.</p>
-      <p>Start shopping now and get the best deals!</p>
-      <a href="${process.env.FRONTEND_URL}" style="display: inline-block; background: #1e3c72; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Start Shopping →</a>
+      <h2 style="color: #c4a47a;">Welcome to ${process.env.COMPANY_NAME || 'Horizon Supplies'}!</h2>
+      <p>Dear ${user.name},</p>
+      <p>Thank you for registering with us. We're excited to have you on board!</p>
+      <p>You can now:</p>
+      <ul>
+        <li>Shop our complete range of safety equipment</li>
+        <li>Track your orders in real-time</li>
+        <li>Get exclusive offers and discounts</li>
+      </ul>
+      <a href="${process.env.FRONTEND_URL}/dashboard" style="background: #c4a47a; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Go to Dashboard</a>
+      <p style="margin-top: 20px;">Best regards,<br>${process.env.COMPANY_NAME || 'Horizon Supplies'} Team</p>
     </div>
   `;
-  return await sendEmail(user.email, 'Welcome to Horizon Supplies!', html);
+  return sendEmail({ to: user.email, subject: `Welcome to ${process.env.COMPANY_NAME || 'Horizon Supplies'}!`, html });
 };
 
-const sendOrderConfirmation = async (user, order) => {
+// ============================================
+// 2. Send Forgot Password OTP
+// ============================================
+export const sendPasswordResetOTP = async (user, otp) => {
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #c4a47a;">Password Reset Request</h2>
+      <p>Dear ${user.name},</p>
+      <p>You requested to reset your password. Use the following OTP to proceed:</p>
+      <h1 style="background: #f0f0f0; padding: 20px; text-align: center; letter-spacing: 5px;">${otp}</h1>
+      <p>This OTP is valid for 10 minutes.</p>
+      <p>If you didn't request this, please ignore this email.</p>
+      <p>Best regards,<br>${process.env.COMPANY_NAME || 'Horizon Supplies'} Team</p>
+    </div>
+  `;
+  return sendEmail({ to: user.email, subject: 'Password Reset OTP', html });
+};
+
+// ============================================
+// 3. Send Order Confirmation
+// ============================================
+export const sendOrderConfirmation = async (order, user) => {
   const itemsHtml = order.orderItems.map(item => `
     <tr>
-      <td>${item.name}</td>
-      <td>${item.quantity}</td>
-      <td>Rs.${item.price}</td>
-      <td>Rs.${item.price * item.quantity}</td>
+      <td style="padding: 8px; border-bottom: 1px solid #eee;">${item.name}</td>
+      <td style="padding: 8px; border-bottom: 1px solid #eee;">${item.quantity}</td>
+      <td style="padding: 8px; border-bottom: 1px solid #eee;">Rs.${item.price.toLocaleString()}</td>
+      <td style="padding: 8px; border-bottom: 1px solid #eee;">Rs.${(item.price * item.quantity).toLocaleString()}</td>
     </tr>
   `).join('');
 
   const html = `
-    <div style="font-family: Arial, sans-serif;">
-      <h1>Order Confirmation #${order._id}</h1>
-      <p>Hello ${user.name},</p>
-      <p>Your order has been placed successfully!</p>
-      <h2>Order Details:</h2>
-      <table border="1" cellpadding="10">
-        <tr><th>Product</th><th>Qty</th><th>Price</th><th>Total</th></tr>
-        ${itemsHtml}
-        <tr><td colspan="3"><strong>Total</strong></td><td><strong>Rs.${order.total}</strong></td></tr>
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #c4a47a;">Order Confirmation #${order._id.slice(-8)}</h2>
+      <p>Dear ${user.name},</p>
+      <p>Thank you for your order! We've received your order and will process it soon.</p>
+      
+      <h3>Order Summary</h3>
+      <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr style="background: #f5f5f5;">
+            <th style="padding: 10px;">Product</th>
+            <th style="padding: 10px;">Qty</th>
+            <th style="padding: 10px;">Price</th>
+            <th style="padding: 10px;">Total</th>
+          </tr>
+        </thead>
+        <tbody>${itemsHtml}</tbody>
       </table>
-      <p>Order Status: ${order.orderStatus}</p>
-      <p>Thank you for shopping with Horizon Supplies!</p>
+      
+      <div style="margin-top: 20px; text-align: right;">
+        <p><strong>Subtotal:</strong> Rs.${order.itemsPrice.toLocaleString()}</p>
+        <p><strong>Shipping:</strong> Rs.${order.shippingPrice.toLocaleString()}</p>
+        <p><strong>Total:</strong> Rs.${order.totalPrice.toLocaleString()}</p>
+      </div>
+      
+      <h3>Shipping Address</h3>
+      <p>${order.shippingAddress.fullName}<br>
+      ${order.shippingAddress.address}<br>
+      ${order.shippingAddress.city}, ${order.shippingAddress.state} - ${order.shippingAddress.zipCode}<br>
+      Phone: ${order.shippingAddress.phone}</p>
+      
+      <p>You can track your order status from your dashboard.</p>
+      <a href="${process.env.FRONTEND_URL}/dashboard/orders/${order._id}" style="background: #c4a47a; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Track Order</a>
+      
+      <p style="margin-top: 20px;">Best regards,<br>${process.env.COMPANY_NAME || 'Horizon Supplies'} Team</p>
     </div>
   `;
-  return await sendEmail(user.email, `Order Confirmation #${order._id}`, html);
+  return sendEmail({ to: user.email, subject: `Order Confirmation #${order._id.slice(-8)}`, html });
 };
 
-const sendOrderStatusUpdate = async (user, order, oldStatus, newStatus) => {
+// ============================================
+// 4. Send Order Status Update
+// ============================================
+export const sendOrderStatusUpdate = async (order, user, oldStatus, newStatus) => {
+  const statusMessages = {
+    processing: 'Your order is being processed.',
+    shipped: 'Your order has been shipped!',
+    delivered: 'Your order has been delivered. Enjoy your purchase!',
+    cancelled: 'Your order has been cancelled.'
+  };
+  
   const html = `
-    <div style="font-family: Arial, sans-serif;">
-      <h1>Order Status Updated</h1>
-      <p>Hello ${user.name},</p>
-      <p>Your order #${order._id} status has been updated from <strong>${oldStatus}</strong> to <strong>${newStatus}</strong>.</p>
-      ${newStatus === 'shipped' && order.trackingNumber ? `<p>Tracking Number: ${order.trackingNumber}</p>` : ''}
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #c4a47a;">Order Status Update</h2>
+      <p>Dear ${user.name},</p>
+      <p>Your order #${order._id.slice(-8)} status has been updated from <strong>${oldStatus}</strong> to <strong>${newStatus}</strong>.</p>
+      <p>${statusMessages[newStatus] || ''}</p>
+      ${order.trackingNumber ? `<p><strong>Tracking Number:</strong> ${order.trackingNumber}</p>` : ''}
+      <a href="${process.env.FRONTEND_URL}/dashboard/orders/${order._id}" style="background: #c4a47a; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Order</a>
+      <p style="margin-top: 20px;">Best regards,<br>${process.env.COMPANY_NAME || 'Horizon Supplies'} Team</p>
     </div>
   `;
-  return await sendEmail(user.email, `Order ${newStatus.toUpperCase()}`, html);
+  return sendEmail({ to: user.email, subject: `Order Status Update - ${newStatus.toUpperCase()}`, html });
 };
 
-module.exports = {
-  sendWelcomeEmail,
-  sendOrderConfirmation,
-  sendOrderStatusUpdate
+// ============================================
+// 5. Send Contact Message Reply to User
+// ============================================
+export const sendContactReply = async (contact, replyMessage) => {
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #c4a47a;">We've received your message</h2>
+      <p>Dear ${contact.name},</p>
+      <p>Thank you for contacting us. Here's our response to your inquiry:</p>
+      <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 15px 0;">
+        <p><strong>Your Message:</strong> ${contact.message}</p>
+        <p><strong>Our Reply:</strong> ${replyMessage}</p>
+      </div>
+      <p>If you have any further questions, feel free to reach out.</p>
+      <p>Best regards,<br>${process.env.COMPANY_NAME || 'Horizon Supplies'} Team</p>
+    </div>
+  `;
+  return sendEmail({ to: contact.email, subject: `Re: ${contact.subject}`, html });
+};
+
+// ============================================
+// 6. Send Contact Form Email to Admin
+// ============================================
+export const sendContactEmail = async (contactData) => {
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #c4a47a;">New Contact Form Submission</h2>
+      <p><strong>Name:</strong> ${contactData.name}</p>
+      <p><strong>Email:</strong> ${contactData.email}</p>
+      <p><strong>Phone:</strong> ${contactData.phone || 'N/A'}</p>
+      <p><strong>Subject:</strong> ${contactData.subject}</p>
+      <p><strong>Message:</strong></p>
+      <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 15px 0;">
+        ${contactData.message}
+      </div>
+      <p>Reply to this customer: ${contactData.email}</p>
+    </div>
+  `;
+  
+  return sendEmail({ 
+    to: process.env.SENDGRID_FROM_EMAIL || process.env.EMAIL_USER || 'admin@horizon.pk', 
+    subject: `New Contact: ${contactData.subject}`, 
+    html 
+  });
+};
+
+// ============================================
+// 7. Send Payment Verification Email
+// ============================================
+export const sendPaymentVerificationEmail = async (order, user, status, rejectionReason = '') => {
+  const statusText = status === 'approved' ? 'APPROVED ✅' : 'REJECTED ❌';
+  const statusColor = status === 'approved' ? '#27ae60' : '#e74c3c';
+  
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: ${statusColor};">Payment Verification ${statusText}</h2>
+      <p>Dear ${user.name},</p>
+      <p>Your payment for order #${order._id.slice(-8)} has been <strong>${status}</strong>.</p>
+      
+      ${status === 'approved' ? `
+        <div style="background: #e8f5e9; padding: 15px; border-radius: 8px; margin: 15px 0;">
+          <p><strong>✓ Payment Verified!</strong></p>
+          <p>Your order is now being processed. You will receive shipping updates soon.</p>
+        </div>
+        <a href="${process.env.FRONTEND_URL}/dashboard/orders/${order._id}" 
+           style="background: #c4a47a; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+          Track Order
+        </a>
+      ` : `
+        <div style="background: #ffebee; padding: 15px; border-radius: 8px; margin: 15px 0;">
+          <p><strong>✗ Payment Verification Failed</strong></p>
+          <p><strong>Reason:</strong> ${rejectionReason || 'Payment proof could not be verified'}</p>
+          <p>Please contact our support team to resolve this issue.</p>
+        </div>
+        <p>If you've already paid, please contact us with your transaction details.</p>
+        <a href="${process.env.FRONTEND_URL}/contact" 
+           style="background: #e74c3c; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+          Contact Support
+        </a>
+      `}
+      
+      <p style="margin-top: 20px;">Best regards,<br>${process.env.COMPANY_NAME || 'Horizon Supplies'} Team</p>
+    </div>
+  `;
+  
+  return sendEmail({ 
+    to: user.email, 
+    subject: `Payment Verification ${statusText} - Order #${order._id.slice(-8)}`, 
+    html 
+  });
 };
