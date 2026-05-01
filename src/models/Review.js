@@ -4,12 +4,16 @@ const reviewSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: false // Optional for guest feedback
+  },
+  guestName: {
+    type: String,
+    required: false
   },
   product: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Product',
-    required: true
+    required: false // Optional for general site feedback
   },
   rating: {
     type: Number,
@@ -19,7 +23,7 @@ const reviewSchema = new mongoose.Schema({
   },
   title: {
     type: String,
-    required: true,
+    required: false,
     trim: true
   },
   comment: {

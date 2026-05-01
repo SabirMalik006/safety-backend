@@ -16,27 +16,38 @@ export const getProductReviews = asyncHandler(async (req, res) => {
 // @desc    Create review
 // @route   POST /api/reviews
 export const createReview = asyncHandler(async (req, res) => {
-  req.body.user = req.user.id;
-  
-  const existingReview = await Review.findOne({
-    user: req.user.id,
-    product: req.body.product
-  });
-  
-  if (existingReview) {
-    throw new AppError('You already reviewed this product', 400);
+  // Handle authenticated vs guest
+  if (req.user) {
+    req.body.user = req.user.id;
+  } else if (!req.body.guestName) {
+    throw new AppError('Name is required for feedback', 400);
+  }
+
+  // Prevent duplicate product reviews if logged in
+  if (req.user && req.body.product) {
+    const existingReview = await Review.findOne({
+      user: req.user.id,
+      product: req.body.product
+    });
+    
+    if (existingReview) {
+      throw new AppError('You already reviewed this product', 400);
+    }
   }
   
   const review = await Review.create(req.body);
   
-  // Update product rating
-  const reviews = await Review.find({ product: req.body.product, isApproved: true });
-  const avgRating = reviews.reduce((acc, rev) => acc + rev.rating, 0) / reviews.length;
-  
-  await Product.findByIdAndUpdate(req.body.product, {
-    rating: avgRating || 0,
-    numReviews: reviews.length
-  });
+  // Only update product rating if it's a product review
+  if (req.body.product) {
+    const reviews = await Review.find({ product: req.body.product, isApproved: true });
+    if (reviews.length > 0) {
+      const avgRating = reviews.reduce((acc, rev) => acc + rev.rating, 0) / reviews.length;
+      await Product.findByIdAndUpdate(req.body.product, {
+        rating: avgRating || 0,
+        numReviews: reviews.length
+      });
+    }
+  }
   
   res.status(201).json({ success: true, data: review });
 });
