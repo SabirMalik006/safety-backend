@@ -1,7 +1,7 @@
 import express from 'express';
 import { protect, admin } from '../middleware/authMiddleware.js';
 import {
-  createOrderWithPaymentProof,
+  createOrder,
   verifyPayment,
   rejectPayment,
   getPendingVerificationOrders,
@@ -9,14 +9,17 @@ import {
   getMyOrders,
   getOrderById,
   getAllOrders,
-  updateOrderStatus
+  updateOrderStatus,
+  uploadPaymentProof
 } from '../controllers/orderController.js';
+import { upload } from '../config/cloudinary.js';
 import { downloadInvoice } from '../utils/invoiceGenerator.js';
 
 const router = express.Router();
 
 // User routes
-router.post('/', protect, createOrderWithPaymentProof);
+router.post('/', protect, createOrder);
+router.post('/upload-proof', protect, upload.single('screenshot'), uploadPaymentProof);
 router.get('/my-orders', protect, getMyOrders);
 router.get('/:id', protect, getOrderById);
 

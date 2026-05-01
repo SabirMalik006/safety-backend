@@ -28,13 +28,16 @@ const userSchema = new mongoose.Schema({
   },
   avatar: String,
   phone: String,
-  address: {
+  addresses: [{
+    fullName: String,
+    phone: String,
     street: String,
     city: String,
     state: String,
     zipCode: String,
-    country: String
-  },
+    country: { type: String, default: 'Pakistan' },
+    isDefault: { type: Boolean, default: false }
+  }],
   isActive: {
     type: Boolean,
     default: true

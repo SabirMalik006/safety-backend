@@ -74,11 +74,92 @@ export const login = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Get current user
-// @route   GET /api/auth/me
-export const getMe = asyncHandler(async (req, res) => {
+// @desc    Get current user profile
+// @route   GET /api/auth/profile
+export const getProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user.id);
+  if (!user) throw new AppError('User not found', 404);
   res.json({ success: true, data: user });
+});
+
+// @desc    Update current user profile
+// @route   PUT /api/auth/profile
+export const updateProfile = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user.id);
+  if (!user) throw new AppError('User not found', 404);
+
+  const { name, phone, address } = req.body;
+  
+  if (name) user.name = name;
+  if (phone) user.phone = phone;
+  if (address) {
+    user.address = {
+      ...user.address,
+      ...address
+    };
+  }
+
+  await user.save();
+
+  res.json({
+    success: true,
+    message: 'Profile updated successfully',
+    data: user
+  });
+});
+
+// @desc    Add new address
+// @route   POST /api/auth/addresses
+export const addAddress = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user.id);
+  if (!user) throw new AppError('User not found', 404);
+
+  const newAddress = { ...req.body, isDefault: user.addresses.length === 0 };
+  user.addresses.push(newAddress);
+  await user.save();
+
+  res.status(201).json({ success: true, data: user.addresses });
+});
+
+// @desc    Update address
+// @route   PUT /api/auth/addresses/:id
+export const updateAddress = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user.id);
+  if (!user) throw new AppError('User not found', 404);
+
+  const address = user.addresses.id(req.params.id);
+  if (!address) throw new AppError('Address not found', 404);
+
+  Object.assign(address, req.body);
+  await user.save();
+
+  res.json({ success: true, data: user.addresses });
+});
+
+// @desc    Delete address
+// @route   DELETE /api/auth/addresses/:id
+export const deleteAddress = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user.id);
+  if (!user) throw new AppError('User not found', 404);
+
+  user.addresses = user.addresses.filter(addr => addr._id.toString() !== req.params.id);
+  await user.save();
+
+  res.json({ success: true, data: user.addresses });
+});
+
+// @desc    Set default address
+// @route   PATCH /api/auth/addresses/:id/default
+export const setDefaultAddress = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user.id);
+  if (!user) throw new AppError('User not found', 404);
+
+  user.addresses.forEach(addr => {
+    addr.isDefault = addr._id.toString() === req.params.id;
+  });
+  
+  await user.save();
+  res.json({ success: true, data: user.addresses });
 });
 
 // @desc    Forgot password - Send OTP

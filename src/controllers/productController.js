@@ -5,27 +5,64 @@ import cloudinary from '../config/cloudinary.js';
 // @desc    Get all products
 // @route   GET /api/products
 export const getProducts = asyncHandler(async (req, res) => {
-  const { category, featured, search, minPrice, maxPrice } = req.query;
+  const { category, featured, search, minPrice, maxPrice, sort } = req.query;
 
   let query = { isActive: true };
 
-  if (category) query.category = category;
+  if (category) {
+    // If category is a slug, we might need to find the category ID first
+    // But let's assume it's passed as ID for now, or handle both
+    if (category.match(/^[0-9a-fA-F]{24}$/)) {
+      query.category = category;
+    } else {
+      // It's a slug, we'll need to find the category ID
+      const Category = (await import('../models/Category.js')).default;
+      const cat = await Category.findOne({ slug: category });
+      if (cat) query.category = cat._id;
+    }
+  }
+  
   if (featured === 'true') query.isFeatured = true;
-  if (search) query.name = { $regex: search, $options: 'i' };
+  if (search) {
+    query.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { description: { $regex: search, $options: 'i' } }
+    ];
+  }
+  
   if (minPrice || maxPrice) {
     query.price = {};
     if (minPrice) query.price.$gte = Number(minPrice);
     if (maxPrice) query.price.$lte = Number(maxPrice);
   }
 
-  const products = await Product.find(query).populate('category');
+  let apiQuery = Product.find(query).populate('category');
+
+  // Sorting
+  if (sort) {
+    const sortBy = sort.split(',').join(' ');
+    apiQuery = apiQuery.sort(sortBy);
+  } else {
+    apiQuery = apiQuery.sort('-createdAt');
+  }
+
+  const products = await apiQuery;
   res.json({ success: true, count: products.length, data: products });
 });
 
-// @desc    Get single product
+// @desc    Get single product by ID
 // @route   GET /api/products/:id
 export const getProduct = asyncHandler(async (req, res) => {
   const product = await Product.findById(req.params.id).populate('category');
+  if (!product) throw new AppError('Product not found', 404);
+
+  res.json({ success: true, data: product });
+});
+
+// @desc    Get single product by slug
+// @route   GET /api/products/slug/:slug
+export const getProductBySlug = asyncHandler(async (req, res) => {
+  const product = await Product.findOne({ slug: req.params.slug, isActive: true }).populate('category');
   if (!product) throw new AppError('Product not found', 404);
 
   res.json({ success: true, data: product });

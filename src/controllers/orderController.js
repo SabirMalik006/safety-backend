@@ -10,12 +10,15 @@ import {
 // ============================================
 // PLACE ORDER WITH PAYMENT PROOF
 // ============================================
-export const createOrderWithPaymentProof = async (req, res) => {
+// ============================================
+// PLACE ORDER (COD or Prepaid)
+// ============================================
+export const createOrder = async (req, res) => {
   try {
     const { 
       orderItems, shippingAddress, paymentMethod, 
       itemsPrice, shippingPrice, totalPrice,
-      paymentProof 
+      paymentProof, orderNotes
     } = req.body;
 
     // Check stock
@@ -29,8 +32,16 @@ export const createOrderWithPaymentProof = async (req, res) => {
       }
     }
 
+    // Determine initial status based on payment method
+    let paymentStatus = 'pending';
+    let orderStatus = 'pending';
+
+    if (paymentMethod !== 'cod') {
+      paymentStatus = 'pending_verification';
+    }
+
     // Create order
-    const order = await Order.create({
+    const orderData = {
       user: req.user.id,
       orderItems,
       shippingAddress,
@@ -38,16 +49,22 @@ export const createOrderWithPaymentProof = async (req, res) => {
       itemsPrice,
       shippingPrice,
       totalPrice,
-      orderStatus: 'pending',
-      paymentStatus: 'pending_verification',  // ✅ Wait for admin verification
-      paymentProof: {
-        screenshotUrl: paymentProof.screenshotUrl,
-        transactionId: paymentProof.transactionId,
+      orderStatus,
+      paymentStatus,
+      orderNotes
+    };
+
+    if (paymentProof) {
+      orderData.paymentProof = {
+        screenshotUrl: paymentProof.screenshotUrl || '',
+        transactionId: paymentProof.transactionId || '',
         paymentDate: paymentProof.paymentDate || Date.now(),
-        paymentAccount: paymentProof.paymentAccount,
-        remarks: paymentProof.remarks
-      }
-    });
+        paymentAccount: paymentProof.paymentAccount || '',
+        remarks: paymentProof.remarks || ''
+      };
+    }
+
+    const order = await Order.create(orderData);
 
     // Reduce stock
     for (const item of orderItems) {
@@ -56,10 +73,19 @@ export const createOrderWithPaymentProof = async (req, res) => {
       });
     }
 
+    // Send confirmation email
+    try {
+      await sendOrderConfirmation(order, req.user);
+    } catch (err) {
+      console.error('Email confirmation error:', err.message);
+    }
+
     res.status(201).json({ 
       success: true, 
       data: order,
-      message: 'Order placed! Payment verification pending.' 
+      message: paymentMethod === 'cod' 
+        ? 'Order placed successfully!' 
+        : 'Order placed! Payment verification pending.' 
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -236,22 +262,47 @@ export const getAllOrders = async (req, res) => {
 // ============================================
 export const updateOrderStatus = async (req, res) => {
   try {
-    const { orderStatus } = req.body;
-    const order = await Order.findById(req.params.id);
+    const { status, orderStatus } = req.body;
+    const finalStatus = status || orderStatus;
+    
+    const order = await Order.findById(req.params.id).populate('user');
     
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
 
     const oldStatus = order.orderStatus;
-    order.orderStatus = orderStatus;
+    order.orderStatus = finalStatus;
     await order.save();
 
     // Send email notification
-    await sendOrderStatusUpdate(order, order.user, oldStatus, orderStatus);
+    try {
+      await sendOrderStatusUpdate(order, order.user, oldStatus, finalStatus);
+    } catch (err) {
+      console.error('Order status email error:', err.message);
+    }
 
     res.json({ success: true, message: 'Order status updated', data: order });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ============================================
+// UPLOAD PAYMENT PROOF SCREENSHOT
+// ============================================
+export const uploadPaymentProof = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file uploaded' });
+    }
+
+    res.status(200).json({
+      success: true,
+      url: req.file.path, // Cloudinary URL
+      message: 'Screenshot uploaded successfully'
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Upload failed: ' + error.message });
   }
 };
