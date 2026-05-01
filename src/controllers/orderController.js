@@ -1,7 +1,11 @@
 import Order from '../models/Order.js';
 import User from '../models/User.js';
 import Product from '../models/Product.js';
-import { sendOrderStatusUpdate, sendPaymentVerificationEmail } from '../utils/emailService.js';
+import { 
+  sendOrderConfirmation, 
+  sendOrderStatusUpdate,
+  sendPaymentVerificationEmail 
+} from '../utils/emailService.js';
 
 // ============================================
 // PLACE ORDER WITH PAYMENT PROOF

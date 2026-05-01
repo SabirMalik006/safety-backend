@@ -1,7 +1,7 @@
 import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
 import { asyncHandler, AppError } from '../middleware/errorMiddleware.js';
-import { sendPasswordResetOTP } from '../utils/emailService.js';
+import { sendWelcomeEmail, sendPasswordResetOTP } from '../utils/emailService.js';  // ✅ Added sendWelcomeEmail
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -22,10 +22,20 @@ export const register = asyncHandler(async (req, res) => {
   const user = await User.create({
     name,
     email,
-    password
+    password,
+    role: 'user'
   });
   
   const token = generateToken(user._id);
+  
+  // ✅ Send welcome email (don't block registration if email fails)
+  try {
+    await sendWelcomeEmail(user);
+    console.log('Welcome email sent to:', email);
+  } catch (emailError) {
+    console.error('Welcome email failed:', emailError.message);
+    // Don't return error - registration still successful
+  }
   
   res.status(201).json({
     success: true,
@@ -71,6 +81,8 @@ export const getMe = asyncHandler(async (req, res) => {
   res.json({ success: true, data: user });
 });
 
+// @desc    Forgot password - Send OTP
+// @route   POST /api/auth/forgot-password
 export const forgotPassword = async (req, res, next) => {
   try {
     const user = await User.findOne({ email: req.body.email });

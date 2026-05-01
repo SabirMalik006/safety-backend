@@ -1,6 +1,7 @@
 import axios from 'axios';
 import crypto from 'crypto';
 import Order from '../models/Order.js';
+import { sendPaymentVerificationEmail } from '../utils/emailService.js';
 
 // ============================================
 // CASH ON DELIVERY
@@ -9,16 +10,16 @@ export const createCODOrder = async (req, res) => {
   try {
     const { orderId } = req.body;
     const order = await Order.findById(orderId);
-    
+
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
-    
+
     order.paymentMethod = 'cod';
     order.paymentStatus = 'pending';
     order.orderStatus = 'pending';
     await order.save();
-    
+
     res.json({
       success: true,
       message: 'COD order created successfully',
@@ -35,12 +36,12 @@ export const createCODOrder = async (req, res) => {
 export const initiateEasyPaisaPayment = async (req, res) => {
   try {
     const { orderId, amount, customerName, customerEmail, customerPhone } = req.body;
-    
+
     const order = await Order.findById(orderId);
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
-    
+
     // EasyPaisa API Request
     const paymentData = {
       storeId: process.env.EASYPAISA_STORE_ID,
@@ -51,18 +52,18 @@ export const initiateEasyPaisaPayment = async (req, res) => {
       transactionRef: `ORDER_${orderId}_${Date.now()}`,
       postBackURL: `${process.env.FRONTEND_URL}/payment/callback`,
     };
-    
+
     // Generate hash for security
     const hashString = `${process.env.EASYPAISA_STORE_ID}|${paymentData.transactionRef}|${amount}|${process.env.EASYPAISA_HASH_KEY}`;
     paymentData.hashedData = crypto.createHash('sha256').update(hashString).digest('hex');
-    
+
     const response = await axios.post(process.env.EASYPAISA_POST_URL, paymentData);
-    
+
     if (response.data.statusCode === '000') {
       order.paymentMethod = 'easypaisa';
       order.paymentStatus = 'pending';
       await order.save();
-      
+
       res.json({
         success: true,
         paymentUrl: response.data.paymentPageUrl,
@@ -80,12 +81,12 @@ export const initiateEasyPaisaPayment = async (req, res) => {
 export const easyPaisaCallback = async (req, res) => {
   try {
     const { transactionRef, statusCode, amount } = req.body;
-    
+
     // Find order by transaction reference
-    const order = await Order.findOne({ 
-      'paymentResult.transactionRef': transactionRef 
+    const order = await Order.findOne({
+      'paymentResult.transactionRef': transactionRef
     });
-    
+
     if (order && statusCode === '000') {
       order.paymentStatus = 'paid';
       order.isPaid = true;
@@ -96,11 +97,11 @@ export const easyPaisaCallback = async (req, res) => {
         updateTime: new Date().toISOString()
       };
       await order.save();
-      
+
       // Send email confirmation
       await sendOrderConfirmation(order, await User.findById(order.user));
     }
-    
+
     res.redirect(`${process.env.FRONTEND_URL}/payment/status?success=${statusCode === '000'}`);
   } catch (error) {
     console.error('EasyPaisa callback error:', error);
@@ -114,15 +115,15 @@ export const easyPaisaCallback = async (req, res) => {
 export const initiateJazzCashPayment = async (req, res) => {
   try {
     const { orderId, amount, customerName, customerEmail, customerPhone } = req.body;
-    
+
     const order = await Order.findById(orderId);
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
-    
+
     const txDateTime = new Date().toISOString().replace(/[-:T.Z]/g, '');
     const ppTxnRefNo = `TXN${txDateTime}${Math.floor(Math.random() * 10000)}`;
-    
+
     // Generate Integrity Salt
     const hashString = [
       process.env.JAZZCASH_MERCHANT_ID,
@@ -132,9 +133,9 @@ export const initiateJazzCashPayment = async (req, res) => {
       'PKR',
       process.env.JAZZCASH_INTEGRITY_SALT
     ].join('&');
-    
+
     const secureHash = crypto.createHash('sha256').update(hashString).digest('hex');
-    
+
     const paymentData = {
       pp_MerchantID: process.env.JAZZCASH_MERCHANT_ID,
       pp_Password: process.env.JAZZCASH_PASSWORD,
@@ -150,12 +151,12 @@ export const initiateJazzCashPayment = async (req, res) => {
       pp_MobileNumber: customerPhone,
       pp_EmailAddress: customerEmail
     };
-    
+
     order.paymentMethod = 'jazzcash';
     order.paymentStatus = 'pending';
     order.paymentResult = { transactionRef: ppTxnRefNo };
     await order.save();
-    
+
     res.json({
       success: true,
       paymentUrl: process.env.JAZZCASH_POST_URL,
@@ -175,14 +176,14 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 export const createStripePaymentIntent = async (req, res) => {
   try {
     const { amount, orderId } = req.body;
-    
+
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(amount * 100),
       currency: 'pkr',
       metadata: { orderId },
       payment_method_types: ['card']
     });
-    
+
     res.json({
       success: true,
       clientSecret: paymentIntent.client_secret,
@@ -196,9 +197,9 @@ export const createStripePaymentIntent = async (req, res) => {
 export const confirmStripePayment = async (req, res) => {
   try {
     const { paymentIntentId, orderId } = req.body;
-    
+
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-    
+
     if (paymentIntent.status === 'succeeded') {
       const order = await Order.findById(orderId);
       if (order) {
@@ -210,13 +211,13 @@ export const confirmStripePayment = async (req, res) => {
           status: paymentIntent.status
         };
         await order.save();
-        
+
         // Send email confirmation
         const user = await User.findById(order.user);
         await sendOrderConfirmation(order, user);
       }
     }
-    
+
     res.json({ success: true, data: paymentIntent });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -230,11 +231,11 @@ export const getPaymentStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
     const order = await Order.findById(orderId);
-    
+
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
-    
+
     res.json({
       success: true,
       data: {
@@ -247,4 +248,39 @@ export const getPaymentStatus = async (req, res) => {
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
+};
+
+export const verifyPayment = async (req, res) => {
+  const { orderId, adminNotes } = req.body;
+
+  const order = await Order.findById(orderId).populate('user');
+  // ... verification logic
+
+  // Send payment verification email
+  try {
+    await sendPaymentVerificationEmail(order, order.user, 'approved');
+    console.log('Payment verification email sent to:', order.user.email);
+  } catch (emailError) {
+    console.error('Payment verification email failed:', emailError.message);
+  }
+
+  res.json({ success: true, message: 'Payment verified' });
+};
+
+// ✅ Inside rejectPayment function
+export const rejectPayment = async (req, res) => {
+  const { orderId, rejectionReason, adminNotes } = req.body;
+
+  const order = await Order.findById(orderId).populate('user');
+  // ... rejection logic
+
+  // Send payment rejection email
+  try {
+    await sendPaymentVerificationEmail(order, order.user, 'rejected', rejectionReason);
+    console.log('Payment rejection email sent to:', order.user.email);
+  } catch (emailError) {
+    console.error('Payment rejection email failed:', emailError.message);
+  }
+
+  res.json({ success: true, message: 'Payment rejected' });
 };

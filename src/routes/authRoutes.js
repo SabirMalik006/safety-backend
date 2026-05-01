@@ -10,12 +10,12 @@ router.post('/forgot-password', forgotPassword);
 router.post('/verify-otp', verifyOTP);
 router.put('/reset-password', resetPassword);
 router.get('/me', protect, getMe);
-router.post('/test-sendgrid', async (req, res) => {
+router.post('/test-resend', async (req, res) => {
   const { sendEmail } = await import('../utils/emailService.js');
   const result = await sendEmail({
-    to: req.body.email || 'your-email@gmail.com',
-    subject: 'SendGrid Test',
-    html: '<h1>✅ SendGrid is Working!</h1><p>Your email configuration is correct.</p>'
+    to: req.body.email || process.env.RESEND_FROM_EMAIL,
+    subject: 'Resend Test Email',
+    html: '<h1>✅ Resend is Working!</h1><p>Your email configuration is correct.</p>'
   });
   res.json(result);
 });

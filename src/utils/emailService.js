@@ -1,36 +1,63 @@
-import sgMail from '@sendgrid/mail';
+import { Resend } from 'resend';
+import dotenv from 'dotenv';
 
-// Initialize SendGrid with API key
-if (process.env.SENDGRID_API_KEY) {
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-  console.log('SendGrid initialized');
+// Load environment variables
+dotenv.config();
+
+// Initialize Resend with better error handling
+let resend = null;
+try {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (apiKey && apiKey.startsWith('re_')) {
+    resend = new Resend(apiKey);
+    console.log('✅ Resend initialized successfully');
+  } else {
+    console.error('❌ Resend API key missing or invalid. Email sending disabled.');
+  }
+} catch (error) {
+  console.error('❌ Failed to initialize Resend:', error.message);
 }
 
 // ============================================
-// Main Send Email Function (Simple)
+// Main Send Email Function
 // ============================================
 export const sendEmail = async ({ to, subject, html, text }) => {
-  // Agar SendGrid API key nahi hai to error return karo
-  if (!process.env.SENDGRID_API_KEY) {
-    console.error('SendGrid API key not configured');
-    return { success: false, error: 'Email service not configured' };
+  // Check if Resend is initialized
+  if (!resend) {
+    console.error('Resend not initialized. Email not sent.');
+    return { success: false, error: 'Email service not configured. Please add RESEND_API_KEY to .env' };
+  }
+
+  // Check if API key is configured
+  if (!process.env.RESEND_API_KEY) {
+    console.error('Resend API key not configured');
+    return { success: false, error: 'RESEND_API_KEY missing in .env file' };
   }
 
   try {
-    const msg = {
-      to,
-      from: process.env.SENDGRID_FROM_EMAIL || process.env.EMAIL_USER || 'noreply@horizon.pk',
-      subject,
-      html,
-      text: text || html?.replace(/<[^>]*>/g, ''),
-    };
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+    const fromName = process.env.RESEND_FROM_NAME || process.env.COMPANY_NAME || 'Horizon Supplies';
     
-    const response = await sgMail.send(msg);
-    console.log('Email sent via SendGrid:', response[0]?.statusCode);
-    return { success: true, messageId: response[0]?.headers?.['x-message-id'] };
+    console.log(`Attempting to send email to: ${to} from: ${fromName} <${fromEmail}>`);
+    
+    const { data, error } = await resend.emails.send({
+      from: `${fromName} <${fromEmail}>`,
+      to: [to],
+      subject: subject,
+      html: html,
+      text: text || html?.replace(/<[^>]*>/g, ''),
+    });
+
+    if (error) {
+      console.error('Resend error:', error);
+      return { success: false, error: error.message };
+    }
+
+    console.log('Email sent via Resend:', data?.id);
+    return { success: true, messageId: data?.id };
     
   } catch (error) {
-    console.error('SendGrid email error:', error.response?.body || error.message);
+    console.error('Email send error:', error);
     return { success: false, error: error.message };
   }
 };
@@ -192,8 +219,9 @@ export const sendContactEmail = async (contactData) => {
     </div>
   `;
   
+  const adminEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
   return sendEmail({ 
-    to: process.env.SENDGRID_FROM_EMAIL || process.env.EMAIL_USER || 'admin@horizon.pk', 
+    to: adminEmail, 
     subject: `New Contact: ${contactData.subject}`, 
     html 
   });
