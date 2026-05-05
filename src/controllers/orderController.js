@@ -7,6 +7,16 @@ import {
   sendPaymentVerificationEmail 
 } from '../utils/emailService.js';
 
+const getFirstImageUrl = (product) => {
+  const first = product?.images?.[0];
+  if (!first) return '';
+  if (typeof first === 'string') return first;
+  return first.url || '';
+};
+
+const isProbablyUrl = (val) =>
+  typeof val === 'string' && (val.startsWith('http://') || val.startsWith('https://'));
+
 // ============================================
 // PLACE ORDER WITH PAYMENT PROOF
 // ============================================
@@ -219,7 +229,23 @@ export const getPaymentProofDetails = async (req, res) => {
 // ============================================
 export const getMyOrders = async (req, res) => {
   try {
-    const orders = await Order.find({ user: req.user.id }).sort('-createdAt');
+    const orders = await Order.find({ user: req.user.id })
+      .populate('orderItems.product', 'images')
+      .sort('-createdAt');
+
+    // Backfill broken/missing item images from populated product images
+    orders.forEach((order) => {
+      order.orderItems.forEach((it) => {
+        const fallback = getFirstImageUrl(it.product);
+        if (!isProbablyUrl(it.image) && fallback) {
+          it.image = fallback;
+        }
+      });
+    });
+
+    // Persist fixes so future reads are clean
+    await Promise.all(orders.map((o) => o.save()));
+
     res.json({ success: true, count: orders.length, data: orders });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -231,7 +257,9 @@ export const getMyOrders = async (req, res) => {
 // ============================================
 export const getOrderById = async (req, res) => {
   try {
-    const order = await Order.findById(req.params.id).populate('user', 'name email phone');
+    const order = await Order.findById(req.params.id)
+      .populate('user', 'name email phone')
+      .populate('orderItems.product', 'images');
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
@@ -239,6 +267,15 @@ export const getOrderById = async (req, res) => {
     if (order.user._id.toString() !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
+    // Backfill broken/missing item images
+    order.orderItems.forEach((it) => {
+      const fallback = getFirstImageUrl(it.product);
+      if (!isProbablyUrl(it.image) && fallback) {
+        it.image = fallback;
+      }
+    });
+    await order.save();
+
     res.json({ success: true, data: order });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

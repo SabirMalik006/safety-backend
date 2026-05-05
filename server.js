@@ -41,7 +41,7 @@ app.use(cors({
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 1000,
   message: 'Too many requests from this IP',
 });
 app.use('/api', limiter);
@@ -67,6 +67,7 @@ import reviewRoutes from './src/routes/reviewRoutes.js';
 import contactRoutes from './src/routes/contactRoutes.js';
 import userRoutes from './src/routes/userRoutes.js';
 import paymentRoutes from './src/routes/paymentRoutes.js';
+import cartRoutes from './src/routes/cartRoutes.js';
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -78,6 +79,7 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/cart', cartRoutes);
 
 
 // Health Check

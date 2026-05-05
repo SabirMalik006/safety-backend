@@ -1,7 +1,8 @@
 import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { asyncHandler, AppError } from '../middleware/errorMiddleware.js';
-import { sendWelcomeEmail, sendPasswordResetOTP } from '../utils/emailService.js';  // ✅ Added sendWelcomeEmail
+import { sendWelcomeEmail, sendPasswordResetOTP, sendPasswordResetEmail } from '../utils/emailService.js';
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -30,7 +31,7 @@ export const register = asyncHandler(async (req, res) => {
   
   // ✅ Send welcome email (don't block registration if email fails)
   try {
-    await sendWelcomeEmail(user);
+    await sendWelcomeEmail(user.email, user.name);
     console.log('Welcome email sent to:', email);
   } catch (emailError) {
     console.error('Welcome email failed:', emailError.message);
@@ -171,16 +172,31 @@ export const forgotPassword = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Generate 6-digit OTP
+    // Support both flows:
+    // - default "otp" for current frontend
+    // - optional "token" mode for production link-based reset (expires in 1 hour)
+    const mode = (req.body.mode || 'otp').toLowerCase();
+
+    if (mode === 'token') {
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+      user.resetPasswordToken = hashedToken;
+      user.resetPasswordExpire = Date.now() + 60 * 60 * 1000; // 1 hour
+      await user.save();
+
+      await sendPasswordResetEmail(user.email, user.name, resetToken);
+      return res.json({ success: true, message: 'Password reset link sent to your email' });
+    }
+
+    // OTP mode (legacy UI)
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    
+
     user.resetOTP = otp;
     user.resetOTPExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
     await user.save();
 
-    // Send OTP via email
     await sendPasswordResetOTP(user, otp);
-
     res.json({ success: true, message: 'OTP sent to your email' });
   } catch (error) {
     next(error);
@@ -212,17 +228,31 @@ export const verifyOTP = async (req, res, next) => {
 // @route   PUT /api/auth/reset-password
 export const resetPassword = async (req, res, next) => {
   try {
-    const { email, otp, newPassword } = req.body;
+    const { email, otp, token, newPassword } = req.body;
     const user = await User.findOne({ email }).select('+password');
     
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
-    
+
+    // Token-based reset (1 hour expiry)
+    if (token) {
+      const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+      if (user.resetPasswordToken !== hashedToken || !user.resetPasswordExpire || user.resetPasswordExpire < Date.now()) {
+        return res.status(400).json({ success: false, message: 'Invalid or expired reset token' });
+      }
+      user.password = newPassword;
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpire = undefined;
+      await user.save();
+      return res.json({ success: true, message: 'Password reset successful' });
+    }
+
+    // OTP-based reset (legacy)
     if (user.resetOTP !== otp || user.resetOTPExpire < Date.now()) {
       return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
     }
-    
+
     user.password = newPassword;
     user.resetOTP = undefined;
     user.resetOTPExpire = undefined;

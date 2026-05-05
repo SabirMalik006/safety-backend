@@ -18,11 +18,11 @@ router.delete('/addresses/:id', protect, deleteAddress);
 router.patch('/addresses/:id/default', protect, setDefaultAddress);
 router.post('/test-resend', async (req, res) => {
   const { sendEmail } = await import('../utils/emailService.js');
-  const result = await sendEmail({
-    to: req.body.email || process.env.RESEND_FROM_EMAIL,
-    subject: 'Resend Test Email',
-    html: '<h1>✅ Resend is Working!</h1><p>Your email configuration is correct.</p>'
-  });
+  const result = await sendEmail(
+    req.body.email || process.env.RESEND_FROM_EMAIL,
+    'Resend Test Email',
+    '<h1>✅ Resend is Working!</h1><p>Your email configuration is correct.</p>'
+  );
   res.json(result);
 });
 

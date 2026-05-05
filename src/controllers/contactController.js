@@ -1,5 +1,5 @@
 import Contact from '../models/Contact.js';
-import { sendContactEmail, sendContactReply } from '../utils/emailService.js';
+import { sendContactEmails } from '../utils/emailService.js';
 import { asyncHandler, AppError } from '../middleware/errorMiddleware.js';
 
 // @desc    Submit contact form
@@ -8,7 +8,7 @@ export const submitContact = asyncHandler(async (req, res) => {
   const contact = await Contact.create(req.body);
   
   // Send email to admin and user
-  await sendContactEmail(req.body);
+  await sendContactEmails(req.body);
   
   res.status(201).json({
     success: true,
