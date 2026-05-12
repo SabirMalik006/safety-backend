@@ -303,7 +303,7 @@ export const sendContactReply = async (contact, replyMessage) => {
 export const sendPaymentVerificationEmail = async (order, user, status, rejectionReason = '') => {
   const statusText = status === 'approved' ? 'APPROVED ✅' : 'REJECTED ❌';
   const statusColor = status === 'approved' ? '#27ae60' : '#e74c3c';
-  
+
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: ${statusColor};">Payment Verification ${statusText}</h2>
@@ -335,7 +335,7 @@ export const sendPaymentVerificationEmail = async (order, user, status, rejectio
       <p style="margin-top: 20px;">Best regards,<br>${process.env.COMPANY_NAME || 'Horizon Supplies'} Team</p>
     </div>
   `;
-  
+
   return sendEmail(
     user.email,
     `Payment Verification ${statusText} - Order #${order._id.slice(-8)}`,
